@@ -88,7 +88,9 @@ $(function() {
                 // 存储 RGB 字符串，在 renderClock 中转换为 HEX
                 titleColor: $this.find('.clock-title').css('color'),
                 isMinimized: $this.data('is-minimized') || false,
-                isSettingsVisible: isSettingsVisible
+                isSettingsVisible: isSettingsVisible,
+                // *** 修复 1：新增：存储拖动位置 ***
+                position: $this.position()
             });
         });
         localStorage.setItem(STORAGE_KEY, JSON.stringify(clocksData));
@@ -174,12 +176,15 @@ $(function() {
         return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
     }
 
-    function generateClockHtml(id, targetTime, startTime, title, titleColor, isSettingsVisible, isMinimized) {
+    function generateClockHtml(id, targetTime, startTime, title, titleColor, isSettingsVisible, isMinimized, position) {
         
         const cardClass = isMinimized ? 'clock-instance minimized' : 'clock-instance';
 
+        // *** 修复 2a：应用位置样式 ***
+        const positionStyle = position ? `top: ${position.top}px; left: ${position.left}px; position: absolute;` : ''; 
+
         return `
-            <div class="${cardClass}" id="${id}" data-target-time="${targetTime}" data-start-time="${startTime}" data-is-minimized="${isMinimized}">
+            <div class="${cardClass}" id="${id}" data-target-time="${targetTime}" data-start-time="${startTime}" data-is-minimized="${isMinimized}" style="${positionStyle}">
                 <div class="clock-header">
                     <span class="clock-title" contenteditable="true" style="color: ${titleColor};">${title}</span>
                     <div class="clock-controls">
@@ -238,7 +243,8 @@ $(function() {
         
         const defaultTitleColor = '#FFFFFF';
         
-        const newClockHtml = generateClockHtml(newId, targetTime, startTime, '新的倒计时', defaultTitleColor, true, false);
+        // *** 修复 2b：传入 null 作为 position 参数 (新创建的没有拖动位置) ***
+        const newClockHtml = generateClockHtml(newId, targetTime, startTime, '新的倒计时', defaultTitleColor, true, false, null);
         $clocksContainer.append(newClockHtml);
         
         const $newClock = $('#' + newId);
@@ -247,9 +253,13 @@ $(function() {
 
         $newClock.draggable({
             handle: ".clock-header",
-            containment: "window", 
+            containment: "document", // *** 修复：统一使用 "document" ***
             // *** 添加此行：忽略发生在 .clock-title 上的点击事件 ***
-            cancel: ".clock-title" 
+            cancel: ".clock-title",
+            // *** 修复 3a：拖动停止时保存位置 ***
+            stop: function() {
+                saveClocksToStorage();
+            }
         });
         
         $newClock.find('.time-l').css('color', globalSettings.timeNumberColor);
@@ -272,7 +282,8 @@ $(function() {
         // *** 修复：确保 startTime 存在，如果不存在则使用默认值 ***
         const startTime = data.startTime || formatDateToInput(new Date(Date.now() - 1000 * 60 * 60)); // 默认一小时前
         
-        const html = generateClockHtml(data.id, data.targetTime, startTime, data.title, color, data.isSettingsVisible, data.isMinimized);
+        // *** 修复 2c：传入 data.position ***
+        const html = generateClockHtml(data.id, data.targetTime, startTime, data.title, color, data.isSettingsVisible, data.isMinimized, data.position);
         $clocksContainer.append(html);
         const $clock = $('#' + data.id);
         
@@ -280,9 +291,13 @@ $(function() {
 
         $clock.draggable({
             handle: ".clock-header",
-            containment: "window",
+            containment: "document", // *** 修复：统一使用 "document" ***
             // *** 添加此行：忽略发生在 .clock-title 上的点击事件 ***
-            cancel: ".clock-title"
+            cancel: ".clock-title",
+            // *** 修复 3b：拖动停止时保存位置 ***
+            stop: function() {
+                saveClocksToStorage();
+            }
         });
 
         $clock.find('.time-l').css('color', globalSettings.timeNumberColor);
@@ -675,7 +690,7 @@ $(function() {
 
     //$('#set-random-wallpaper-btn').on('click', function() {
        // setRandomBackground();
-      //  alert("已切换到随机壁纸。");
+      //  alert("已切换到随机壁纸。\");
    // });功能重复了，傻逼ai
     
     $('#clear-local-wallpaper-btn').on('click', function() {
@@ -706,7 +721,11 @@ $('.clock-instance').draggable({
             handle: ".clock-header",
             containment: "document",
             // *** 添加此行：忽略发生在 .clock-title 上的点击事件 ***
-            cancel: ".clock-title"
+            cancel: ".clock-title",
+            // *** 修复 3c：拖动停止时保存位置 ***
+            stop: function() {
+                saveClocksToStorage();
+            }
         });
 
         applyGlobalSettings(); 
