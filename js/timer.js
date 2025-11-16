@@ -9,14 +9,17 @@ $(function() {
     const WALLPAPER_TYPE_KEY = 'wallpaperType'; 
     const GLOBAL_SETTINGS_KEY = 'globalSettings';
     
+    // 默认设置中添加 newClockDefaultTime
     let globalSettings = {
         fabColorMode: 'default',
         timeNumberColor: '#FFFFFF',
         progressBarColor: '#4CAF50',
-        settingsFabColor: generateRandomColor() 
+        settingsFabColor: generateRandomColor(),
+        newClockDefaultTime: '7d' // 默认间隔 7 天
     };
 
     function hexToRgb(hex) {
+        // 专门处理 RGB 到 HEX 的转换，用于标题颜色
         const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
         hex = hex.replace(shorthandRegex, function(m, r, g, b) {
             return r + r + g + g + b + b;
@@ -31,663 +34,626 @@ $(function() {
     
     function calculateLuminance(hex) {
         const rgb = hexToRgb(hex);
-        // 使用标准的 ITU-R BT.709 公式
-        return (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]);
-    }
-
-    function getAdaptiveTextColor(backgroundColorHex) {
-        const luminance = calculateLuminance(backgroundColorHex);
-        return luminance > 150 ? '#000000' : '#FFFFFF';
+        const r = rgb[0] / 255;
+        const g = rgb[1] / 255;
+        const b = rgb[2] / 255;
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
     }
 
     function generateRandomColor() {
-        return '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0').toUpperCase();
-    }
-
-    // ----------------------------------------------------------------
-    // 2. 壁纸和默认标题颜色逻辑 
-    // ----------------------------------------------------------------
-    
-    function getAdaptiveDefaultTitleColor() {
-        return '#FFFFFF'; 
-    }
-    
-    /**
-     * 更新壁纸 FAB 按钮的可见性
-     */
-    function updateWallpaperFabVisibility() {
-        const type = localStorage.getItem(WALLPAPER_TYPE_KEY);
-        // 只有在当前是“随机壁纸”类型或有本地壁纸保存时，才显示切换按钮
-        const localUrl = localStorage.getItem('savedLocalWallpaper');
-        if (type === 'random' || localUrl) {
-            $('#wallpaper-btn').css('display', 'flex'); 
-        } else {
-            $('#wallpaper-btn').css('display', 'none');
+        const letters = '0123456789ABCDEF';
+        let color = '#';
+        for (let i = 0; i < 6; i++) {
+            color += letters[Math.floor(Math.random() * 16)];
         }
-    }
-
-    /**
-     * 设置随机背景图
-     */
-    function setRandomBackground() {
-        let rand = Math.floor(Math.random() * 4050);
-        let randIm = "https://wallpaper.infinitynewtab.com/wallpaper/" + rand + ".jpg";
-        document.body.style.backgroundImage = "url(" + randIm + ")";
-        document.body.style.backgroundSize = "cover";
-        document.body.style.backgroundAttachment = "fixed";
-        document.body.style.backgroundPosition = "center center"; 
-        
-        // 只保存当前的随机URL和类型
-        localStorage.setItem(WALLPAPER_KEY, randIm);
-        localStorage.setItem(WALLPAPER_TYPE_KEY, 'random');
-        updateWallpaperFabVisibility(); 
-    }
-
-    /**
-     * 设置本地背景图 (接受 URL 或 DataURL)
-     */
-    function setLocalBackground(url) {
-        document.body.style.backgroundImage = "url(" + url + ")";
-        document.body.style.backgroundSize = "cover";
-        document.body.style.backgroundAttachment = "fixed";
-        document.body.style.backgroundPosition = "center center";
-
-        // 将本地图片的 dataURL 永久存储在一个单独的 key 中，以便切换回本地壁纸
-        if (url.startsWith('data:')) {
-            localStorage.setItem('savedLocalWallpaper', url);
-        }
-        
-        localStorage.setItem(WALLPAPER_KEY, url);
-        localStorage.setItem(WALLPAPER_TYPE_KEY, 'local');
-        updateWallpaperFabVisibility(); 
+        return color;
     }
     
-    /**
-     * 根据存储加载壁纸
-     */
-    function loadWallpaper() {
-        const type = localStorage.getItem(WALLPAPER_TYPE_KEY);
-        const url = localStorage.getItem(WALLPAPER_KEY);
-        const localUrl = localStorage.getItem('savedLocalWallpaper');
-
-        if (type === 'local' && url) {
-            setLocalBackground(url);
-        } else if (localUrl) {
-            // 如果上次是随机，但有本地图片存储，也要更新FAB可见性
-            updateWallpaperFabVisibility(); 
-            setRandomBackground();
-        } else {
-            setRandomBackground();
-        }
-    }
-    
-    /**
-     * 切换壁纸 (随机/本地)
-     */
-    function toggleWallpaper() {
-        const type = localStorage.getItem(WALLPAPER_TYPE_KEY);
-        const localUrl = localStorage.getItem('savedLocalWallpaper'); 
-
-        // 如果当前是随机壁纸且有本地存储，则切换到本地
-        if (type === 'random' && localUrl) {
-             setLocalBackground(localUrl);
-        } else {
-             // 否则，重新加载一张新的随机图片
-             setRandomBackground();
-        }
+    // 辅助函数：生成稍浅的颜色用于进度条渐变
+    function generateLighterColor(hex) {
+        let [r, g, b] = hexToRgb(hex);
+        r = Math.min(255, r + 50);
+        g = Math.min(255, g + 50);
+        b = Math.min(255, b + 50);
+        const toHex = (c) => c.toString(16).padStart(2, '0');
+        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
     }
 
 
     // ----------------------------------------------------------------
-    // 3. 全局设置存储和应用逻辑 
+    // 2. 数据存储与加载
     // ----------------------------------------------------------------
 
-    function loadGlobalSettings() {
-        const storedSettings = localStorage.getItem(GLOBAL_SETTINGS_KEY);
-        if (storedSettings) {
-            globalSettings = { 
-                ...globalSettings, 
-                ...JSON.parse(storedSettings) 
-            };
-            globalSettings.settingsFabColor = generateRandomColor();
-        }
-    }
-
-    function saveGlobalSettings() {
-        const settingsToStore = {
-            fabColorMode: globalSettings.fabColorMode,
-            timeNumberColor: globalSettings.timeNumberColor,
-            progressBarColor: globalSettings.progressBarColor
-        };
-        localStorage.setItem(GLOBAL_SETTINGS_KEY, JSON.stringify(settingsToStore));
-        applyGlobalSettings(); 
-        updateAllClocks(); // 确保时钟上的时间数字颜色立刻更新
-    }
-
-    /**
-     * 应用全局设置到所有相关 DOM 元素
-     */
-    function applyGlobalSettings() {
-        // 1. 设置 FAB 按钮颜色 (随机)
-        $('#settings-fab').css('background-color', globalSettings.settingsFabColor);
-
-        // 2. 应用全局数字颜色
-        const timeColor = globalSettings.timeNumberColor.toUpperCase();
-        $('.clock-instance .time-l').css('color', timeColor);
-        $('#time-number-color').val(timeColor);
-        $('#time-number-color-text').val(timeColor);
-
-        // 3. 应用全局进度条颜色
-        const progressBarColor = globalSettings.progressBarColor.toUpperCase();
-        const rgb = hexToRgb(progressBarColor);
-        const gradientColor1 = progressBarColor;
-        const gradientColor2 = `rgb(${Math.min(255, rgb[0] + 50)}, ${Math.min(255, rgb[1] + 50)}, ${Math.min(255, rgb[2] + 50)})`;
-
-        const gradientStyle = `linear-gradient(90deg, ${gradientColor1}, ${gradientColor2})`;
-        $('.progress-bar-inner').css('background', gradientStyle);
-        $('#progress-bar-color').val(progressBarColor);
-        $('#progress-bar-color-text').val(progressBarColor);
-        
-        // 4. 应用悬浮球颜色模式
-        $('#fab-color-mode').val(globalSettings.fabColorMode);
-        updateMinimizedFabColors();
-    }
-    
-    /**
-     * 根据全局模式更新所有最小化悬浮球的颜色和文字颜色
-     */
-    function updateMinimizedFabColors() {
-        $('.minimized-clock-btn').each(function() {
-            const $fab = $(this);
-            const clockId = $fab.data('id');
-            // 注意：这里需要通过 ID 找到卡片，即使它当前是隐藏的
-            const $clock = $(`#clocks-container .clock-instance[data-id="${clockId}"]`);
-            let bgColor;
-            let textColor;
-            let isCompleted = $clock.hasClass('completed');
-
-            switch (globalSettings.fabColorMode) {
-                case 'random':
-                    if (!$fab.data('random-color')) {
-                         $fab.data('random-color', generateRandomColor());
-                    }
-                    bgColor = $fab.data('random-color'); 
-                    textColor = getAdaptiveTextColor(bgColor);
-                    $fab.css({ 'background': bgColor, 'color': textColor });
-                    // 完成状态的描边使用 CSS 覆盖，这里只需要处理非完成状态的边框
-                    if (!isCompleted) $fab.css('border', 'none'); 
-                    break;
-
-                case 'title':
-                    // 确保能读取到当前标题颜色，即使卡片被最小化
-                    const titleColor = $clock.find('.clock-title-color').val() || $clock.find('.clock-title').css('color') || '#FFFFFF';
-                    bgColor = titleColor;
-                    textColor = getAdaptiveTextColor(bgColor);
-                    $fab.css({ 'background': bgColor, 'color': textColor });
-                    if (!isCompleted) $fab.css('border', '1px solid rgba(255, 255, 255, 0.3)'); 
-                    break;
-
-                case 'default':
-                default:
-                    bgColor = 'rgba(0, 0, 0, 0.4)';
-                    textColor = '#FFFFFF';
-                    $fab.css({ 'background': bgColor, 'color': textColor });
-                    if (!isCompleted) $fab.css('border', '1px solid rgba(255, 255, 255, 0.3)'); 
-                    break;
-            }
-            
-            // 确保文字颜色应用于内部 span
-             $fab.find('.min-title, .min-percent').css('color', textColor);
-        });
-    }
-
-    // ----------------------------------------------------------------
-    // 4. 存储、渲染和添加逻辑 
-    // ----------------------------------------------------------------
-    
-    function formatDateForInput(date) {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        return `${year}-${month}-${day}T${hours}:${minutes}`;
-    }
-
-    function loadClocksFromStorage() {
-        const clocksJson = localStorage.getItem(STORAGE_KEY);
-        let clocks = clocksJson ? JSON.parse(clocksJson) : [];
-
-        const defaultStart = formatDateForInput(new Date());
-        const defaultEnd = formatDateForInput(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)); 
-
-        return clocks.map(clock => ({
-            id: clock.id,
-            title: clock.title || "新倒计时",
-            startDate: clock.startDate || defaultStart,
-            targetDate: clock.targetDate || defaultEnd,
-            isMinimized: clock.isMinimized || false,
-            top: clock.top || 'auto',
-            left: clock.left || 'auto',
-            titleColor: clock.titleColor || getAdaptiveDefaultTitleColor()
-        }));
-    }
-
-    /**
-     * 修复：重新实现 saveClocksToStorage，确保正确获取位置和最小化状态
-     */
     function saveClocksToStorage() {
         const clocksData = [];
         $('.clock-instance').each(function() {
-            const $clock = $(this);
-            const clockId = $clock.data('id');
-            const $minimizedFab = $(`#fab-container .minimized-clock-btn[data-id="${clockId}"]`);
-
-            // 判断是否最小化：检查最小化 FAB 是否可见
-            const isMinimized = $minimizedFab.css('display') === 'flex'; 
+            const $this = $(this);
+            const isSettingsVisible = $this.find('.clock-settings').is(':visible');
             
-            // 获取位置
-            let top = 'auto';
-            let left = 'auto';
-            if ($clock.css('position') === 'absolute') {
-                top = $clock.css('top');
-                left = $clock.css('left');
-            }
-
-            const clockData = {
-                id: clockId,
-                title: $clock.find('.clock-title').text().trim(), 
-                startDate: $clock.find('.clock-start-date').val(),
-                targetDate: $clock.find('.clock-target-date').val(),
-                isMinimized: isMinimized, 
-                top: top, 
-                left: left,
-                titleColor: $clock.find('.clock-title-color').val() || $clock.find('.clock-title').css('color')
-            };
-            clocksData.push(clockData);
+            clocksData.push({
+                id: $this.attr('id'),
+                targetTime: $this.data('target-time'),
+                // *** 修复：存储起始时间 ***
+                startTime: $this.data('start-time'), 
+                title: $this.find('.clock-title').text(),
+                // 存储 RGB 字符串，在 renderClock 中转换为 HEX
+                titleColor: $this.find('.clock-title').css('color'),
+                isMinimized: $this.data('is-minimized') || false,
+                isSettingsVisible: isSettingsVisible
+            });
         });
         localStorage.setItem(STORAGE_KEY, JSON.stringify(clocksData));
-        updateMinimizedFabColors(); 
     }
 
-    /**
-     * 将时钟数据渲染到页面
-     */
-    function renderClock(clockData) {
-        let initialDisplay = clockData.isMinimized ? 'none' : 'block'; 
-        let initialPosition = '';
+    function loadClocksFromStorage() {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        return saved ? JSON.parse(saved) : [];
+    }
+    
+    function loadGlobalSettings() {
+        const savedSettings = localStorage.getItem(GLOBAL_SETTINGS_KEY);
+        if (savedSettings) {
+            Object.assign(globalSettings, JSON.parse(savedSettings));
+        }
+        // 同步 UI 状态
+        $('#fab-color-mode').val(globalSettings.fabColorMode);
+        $('#time-number-color').val(globalSettings.timeNumberColor);
+        $('#time-number-color-text').val(globalSettings.timeNumberColor);
+        $('#progress-bar-color').val(globalSettings.progressBarColor);
+        $('#progress-bar-color-text').val(globalSettings.progressBarColor);
+        $('#new-clock-default-time').val(globalSettings.newClockDefaultTime); 
+    }
 
-        if (!clockData.isMinimized && clockData.top && clockData.left && clockData.top !== 'auto' && clockData.left !== 'auto') {
-            initialPosition = `position: absolute; top: ${clockData.top}; left: ${clockData.left};`;
-        } 
+    function saveGlobalSettings() {
+        localStorage.setItem(GLOBAL_SETTINGS_KEY, JSON.stringify(globalSettings));
+    }
+    
+    function applyGlobalSettings() {
+        // 应用全局时间数字颜色
+        $('.time-l').css('color', globalSettings.timeNumberColor);
+        // 更新 FAB 颜色
+        updateMinimizedFabColors();
         
-        // 渲染时钟卡片
-        const clockHtml = `
-            <div class="clock-instance" data-id="${clockData.id}" style="display: ${initialDisplay}; ${initialPosition}">
-                
+        // 确保进度条颜色也能应用到新创建的
+        $('.progress-bar-inner').css('background', `linear-gradient(90deg, ${globalSettings.progressBarColor}, ${generateLighterColor(globalSettings.progressBarColor)})`);
+    }
+
+
+    // ----------------------------------------------------------------
+    // 3. 时钟创建与更新 
+    // ----------------------------------------------------------------
+
+    // 辅助函数：根据间隔字符串计算目标时间
+    function calculateTargetTime(interval) {
+        const now = new Date();
+        const value = parseInt(interval.slice(0, -1));
+        const unit = interval.slice(-1);
+        
+        const targetTime = new Date(now.getTime());
+
+        switch (unit) {
+            case 'm': // 分钟
+                targetTime.setMinutes(now.getMinutes() + value);
+                break;
+            case 'h': // 小时
+                targetTime.setHours(now.getHours() + value);
+                break;
+            case 'd': // 天
+                targetTime.setDate(now.getDate() + value);
+                break;
+            default:
+                targetTime.setDate(now.getDate() + 7);
+                break;
+        }
+        
+        const yyyy = targetTime.getFullYear();
+        const mm = String(targetTime.getMonth() + 1).padStart(2, '0');
+        const dd = String(targetTime.getDate()).padStart(2, '0');
+        const hh = String(targetTime.getHours()).padStart(2, '0');
+        const min = String(targetTime.getMinutes()).padStart(2, '0');
+        
+        return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+    }
+    
+    // 辅助函数：格式化 Date 对象为 YYYY-MM-DDTHH:MM 格式的字符串
+    function formatDateToInput(date) {
+        const yyyy = date.getFullYear();
+        const mm = String(date.getMonth() + 1).padStart(2, '0');
+        const dd = String(date.getDate()).padStart(2, '0');
+        const hh = String(date.getHours()).padStart(2, '0');
+        const min = String(date.getMinutes()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+    }
+
+    function generateClockHtml(id, targetTime, startTime, title, titleColor, isSettingsVisible, isMinimized) {
+        
+        const cardClass = isMinimized ? 'clock-instance minimized' : 'clock-instance';
+
+        return `
+            <div class="${cardClass}" id="${id}" data-target-time="${targetTime}" data-start-time="${startTime}" data-is-minimized="${isMinimized}">
                 <div class="clock-header">
-                    <div 
-                        class="clock-title" 
-                        contenteditable="true" 
-                        spellcheck="false"
-                        style="color: ${clockData.titleColor || '#fff'};"
-                    >${clockData.title}</div>
-                    
-                    <div class="clock-header-buttons">
-                        <button class="minimize-toggle-btn" title="最小化/恢复">_</button>
-                        <button class="settings-toggle-btn" title="显示/隐藏设置">
-                            <span class="arrow-down">▼</span>
-                            <span class="arrow-up" style="display:none;">▲</span>
-                        </button>
-                        <button class="delete-clock-btn" title="删除这个倒计时">×</button>
+                    <span class="clock-title" contenteditable="true" style="color: ${titleColor};">${title}</span>
+                    <div class="clock-controls">
+                        <button class="settings-toggle-btn" title="设置">▼</button>
+                        <button class="minimize-toggle-btn" title="${isMinimized ? '展开' : '最小化'}">━</button>
+                        <button class="delete-clock-btn" title="删除">✖</button>
                     </div>
                 </div>
                 
-                <div class="clock-settings" style="display: none;">
-                    
-                    <div class="title-color-group">
-                        <label>标题颜色：</label>
-                        <div class="color-controls">
-                             <button class="reset-title-color-btn" title="恢复默认颜色 (白色)">默认颜色</button>
-                             <input 
-                                type="color" 
-                                class="clock-title-color" 
-                                value="${clockData.titleColor || '#ffffff'}"
-                             >
+                <div class="clock-body" ${isMinimized ? 'style="display: none;"' : ''}>
+                    <div class="clock-settings" ${isSettingsVisible ? '' : 'style="display: none;"'}>
+                        <label>倒计时目标时间:</label>
+                        <input type="datetime-local" class="target-time-input" value="${targetTime}">
+                        
+                        <label>倒计时起始时间:</label>
+                        <input type="datetime-local" class="start-time-input" value="${startTime}">
+                        
+                        <div class="title-color-group">
+                            <label>标题颜色:</label>
+                            <div class="color-controls">
+                                <input type="color" class="title-color-picker" value="${titleColor}">
+                                <button class="reset-title-color-btn">重置</button>
+                            </div>
                         </div>
                     </div>
 
-                    <label>开始时间：
-                        <input 
-                            type="datetime-local" 
-                            class="clock-start-date" 
-                            value="${clockData.startDate || ''}"
-                        >
-                    </label>
-                    <label>目标时间：
-                        <input 
-                            type="datetime-local" 
-                            class="clock-target-date" 
-                            value="${clockData.targetDate || ''}"
-                        >
-                    </label>
-                </div>
+                    <div class="time-box">
+                        <ul>
+                            <li><span class="time-l days">00</span><span class="time-s">天</span></li>
+                            <li><span class="time-l hours">00</span><span class="time-s">时</span></li>
+                            <li><span class="time-l minutes">00</span><span class="time-s">分</span></li>
+                            <li><span class="time-l seconds">00</span><span class="time-s">秒</span></li>
+                        </ul>
+                    </div>
+                    
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-inner"></div>
+                        <span class="progress-percent-text">0.00%</span>
+                    </div>
 
-                <div class="time-box">
-                    <ul class="clearfix">
-                        <li><span class="time-l time-d" style="color:${globalSettings.timeNumberColor};">0</span><span class="time-s">天</span></li>
-                        <li><span class="time-l time-h" style="color:${globalSettings.timeNumberColor};">00</span><span class="time-s">时</span></li>
-                        <li><span class="time-l time-m" style="color:${globalSettings.timeNumberColor};">00</span><span class="time-s">分</span></li>
-                        <li><span class="time-l time-sec" style="color:${globalSettings.timeNumberColor};">00</span><span class="time-s">秒</span></li>
-                    </ul>
+                    <div class="date-tips">
+                        <span class="start-date-tip">起始: ${new Date(startTime).toLocaleDateString()}</span>
+                        <span class="end-date-tip">目标: ${new Date(targetTime).toLocaleDateString()}</span>
+                    </div>
                 </div>
-
-                <div class="progress-bar-container" title="进度百分比">
-                    <div class="progress-bar-inner"></div>
-                    <span class="progress-percent-text">0.00%</span>
-                </div>
-
             </div>
         `;
-        const $newClock = $(clockHtml);
-        $clocksContainer.append($newClock);
-        
-        // 生成并添加最小化 FAB 按钮
-        const $minimizedFab = $(`
-            <button 
-                class="minimized-clock-btn" 
-                data-id="${clockData.id}"
-                title="${clockData.title} 进度"
-                style="display: ${clockData.isMinimized ? 'flex' : 'none'};" 
-            >
-                <span class="min-title">${clockData.title}</span>
-                <span class="min-percent">0.00%</span>
-            </button>
-        `);
-        // 插入到设置按钮之前
-        $minimizedFab.insertBefore($('#settings-fab')); 
-        
-        // 激活新添加时钟的拖动功能
-        $newClock.draggable({
-            handle: ".clock-header",
-            cancel: ".clock-title, .clock-header-buttons button", 
-            containment: "window",
-            start: function() {
-                // 拖动开始时，将元素从流式布局（如果它是相对定位）改为绝对定位
-                $(this).css('position', 'absolute'); 
-            },
-            stop: saveClocksToStorage // 拖动停止时保存位置
-        });
-        
-        updateClock($newClock);
     }
 
-    /**
-     * 专用的添加新时钟函数
-     */
     function addNewClock() {
-        const now = new Date();
-        const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const newId = 'clock-' + Date.now();
         
-        const newClock = {
-            id: Date.now(),
-            title: "新倒计时 (点击编辑)",
-            startDate: formatDateForInput(now),
-            targetDate: formatDateForInput(oneWeekFromNow),
-            isMinimized: false,
-            top: 'auto',
-            left: 'auto',
-            titleColor: getAdaptiveDefaultTitleColor() 
-        };
-        renderClock(newClock);
+        // *** 修复：设置起始时间为创建时的时间 ***
+        const startTime = formatDateToInput(new Date()); 
+        const targetTime = calculateTargetTime(globalSettings.newClockDefaultTime);
+        
+        const defaultTitleColor = '#FFFFFF';
+        
+        const newClockHtml = generateClockHtml(newId, targetTime, startTime, '新的倒计时', defaultTitleColor, true, false);
+        $clocksContainer.append(newClockHtml);
+        
+        const $newClock = $('#' + newId);
+        
+// timer.js (在 addNewClock 函数内)
+
+        $newClock.draggable({
+            handle: ".clock-header",
+            containment: "window", 
+            // *** 添加此行：忽略发生在 .clock-title 上的点击事件 ***
+            cancel: ".clock-title" 
+        });
+        
+        $newClock.find('.time-l').css('color', globalSettings.timeNumberColor);
+        $newClock.find('.progress-bar-inner').css('background', `linear-gradient(90deg, ${globalSettings.progressBarColor}, ${generateLighterColor(globalSettings.progressBarColor)})`);
+
+
+        saveClocksToStorage();
+        updateClockDisplay($newClock);
+    }
+    
+    function renderClock(data) {
+        // 确保颜色是 #HEX 格式，即使存储的是 RGB 字符串
+        let color = data.titleColor;
+        const rgbMatch = color.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+        if (rgbMatch) {
+            const toHex = (c) => parseInt(c).toString(16).padStart(2, '0');
+            color = `#${toHex(rgbMatch[1])}${toHex(rgbMatch[2])}${toHex(rgbMatch[3])}`;
+        }
+        
+        // *** 修复：确保 startTime 存在，如果不存在则使用默认值 ***
+        const startTime = data.startTime || formatDateToInput(new Date(Date.now() - 1000 * 60 * 60)); // 默认一小时前
+        
+        const html = generateClockHtml(data.id, data.targetTime, startTime, data.title, color, data.isSettingsVisible, data.isMinimized);
+        $clocksContainer.append(html);
+        const $clock = $('#' + data.id);
+        
+// timer.js (在 renderClock 函数内)
+
+        $clock.draggable({
+            handle: ".clock-header",
+            containment: "window",
+            // *** 添加此行：忽略发生在 .clock-title 上的点击事件 ***
+            cancel: ".clock-title"
+        });
+
+        $clock.find('.time-l').css('color', globalSettings.timeNumberColor);
+        $clock.find('.progress-bar-inner').css('background', `linear-gradient(90deg, ${globalSettings.progressBarColor}, ${generateLighterColor(globalSettings.progressBarColor)})`);
+
+
+        if (data.isMinimized) {
+            createMinimizedFabButton($clock);
+        }
+        
+        updateClockDisplay($clock);
+    }
+
+    function updateClockDisplay($clock) {
+        const targetDate = new Date($clock.data('target-time'));
+        // *** 修复：获取起始时间 ***
+        const startDate = new Date($clock.data('start-time'));
+        const now = new Date();
+        const diff = targetDate.getTime() - now.getTime();
+        
+        // 总时长 (毫秒)
+        const totalDuration = targetDate.getTime() - startDate.getTime(); 
+
+        const $days = $clock.find('.days');
+        const $hours = $clock.find('.hours');
+        const $minutes = $clock.find('.minutes');
+        const $seconds = $clock.find('.seconds');
+        const $progressInner = $clock.find('.progress-bar-inner');
+        const $percentText = $clock.find('.progress-percent-text');
+        const $fab = $(`#fab-${$clock.attr('id')}`);
+
+        $clock.removeClass('completed');
+        
+        let percent = '0.00%';
+        
+        if (diff <= 0) {
+            // 倒计时结束
+            $days.text('00');
+            $hours.text('00');
+            $minutes.text('00');
+            $seconds.text('00');
+            $progressInner.css('width', '100%');
+            percent = '100.00%';
+            $percentText.text(percent);
+            $clock.addClass('completed');
+
+            // 更新最小化按钮状态：显示“完成”和 100%
+            if ($fab.length) {
+                $fab.addClass('completed');
+                $fab.find('.fab-title').text($clock.find('.clock-title').text());
+                $fab.find('.fab-percent').text(percent);
+            }
+
+        } else {
+            // 倒计时进行中
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+            $days.text(days < 10 ? '0' + days : days);
+            $hours.text(hours < 10 ? '0' + hours : hours);
+            $minutes.text(minutes < 10 ? '0' + minutes : minutes);
+            $seconds.text(seconds < 10 ? '0' + seconds : seconds);
+            
+            // *** 修复：进度条计算 - 使用起始时间作为基点 ***
+            let progress = 0;
+            if (totalDuration > 0) {
+                 const elapsedDuration = now.getTime() - startDate.getTime();
+                 progress = Math.min(1, Math.max(0, elapsedDuration / totalDuration));
+            }
+
+            percent = (progress * 100).toFixed(2) + '%';
+            $progressInner.css('width', percent);
+            $percentText.text(percent);
+
+            // 最小化悬浮球更新
+            if ($fab.length) {
+                const title = $clock.find('.clock-title').text();
+                $fab.find('.fab-title').text(title);
+                $fab.find('.fab-percent').text(percent);
+                $fab.removeClass('completed');
+            }
+        }
+    }
+    
+    // 主循环：每秒更新所有时钟
+    setInterval(() => {
+        $('.clock-instance').each(function() {
+            updateClockDisplay($(this));
+        });
+    }, 1000);
+    
+// ... (最小化 FAB 按钮逻辑) ...
+    function createMinimizedFabButton($clock) {
+        const clockId = $clock.attr('id');
+        const title = $clock.find('.clock-title').text();
+        
+        if ($(`#fab-${clockId}`).length) return;
+        
+        const initialPercent = $clock.find('.progress-percent-text').text() || '0.00%';
+        
+        // 悬浮球 HTML 结构修改：包含标题和百分比
+        const $fab = $(`<button id="fab-${clockId}" class="fab-button minimized-clock-btn bounce animated" title="${title}">
+                            <span class="fab-title">${title}</span>
+                            <span class="fab-percent">${initialPercent}</span>
+                        </button>`);
+        
+        // *** 修复核心：使用 append()。在 flex-direction: row-reverse 布局下，
+        // append() 会使新元素在 DOM 列表的末尾，但在视觉上出现在最左侧。 ***
+        $('#fab-container').append($fab); 
+        
+        updateFabColor($fab, $clock);
+
+        $fab.on('click', function() {
+            toggleClockMinimize($clock);
+        });
+    }
+
+    function removeMinimizedFabButton(clockId) {
+        $(`#fab-${clockId}`).remove();
+    }
+    
+    function updateFabColor($fab, $clock) {
+        let color;
+        switch (globalSettings.fabColorMode) {
+            case 'random':
+                color = $clock.data('fab-color') || generateRandomColor();
+                $clock.data('fab-color', color);
+                break;
+            case 'title':
+                // 确保获取的是 #HEX 格式
+                const titleColorRgb = $clock.find('.clock-title').css('color');
+                const match = titleColorRgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+                if (match) {
+                    const toHex = (c) => parseInt(c).toString(16).padStart(2, '0');
+                    color = `#${toHex(match[1])}${toHex(match[2])}${toHex(match[3])}`;
+                } else {
+                    color = '#FFFFFF'; 
+                }
+                break;
+            case 'default':
+            default:
+                // 修复默认主题色为半透明黑
+                color = 'rgba(0, 0, 0, 0.75)'; 
+                return $fab.css('background-color', color);
+        }
+        $fab.css('background-color', color);
+    }
+    
+    function updateMinimizedFabColors() {
+        // 筛选出被最小化的时钟
+        $('.clock-instance[data-is-minimized="true"]').each(function() {
+            updateFabColor($(`#fab-${$(this).attr('id')}`), $(this));
+        });
+    }
+
+    // 最小化/展开功能逻辑
+    function toggleClockMinimize($clock) {
+        const isMinimized = $clock.data('is-minimized');
+        const clockId = $clock.attr('id');
+        const $minimizeBtn = $clock.find('.minimize-toggle-btn');
+        const $clockBody = $clock.find('.clock-body'); 
+
+        if (isMinimized) {
+            // 展开
+            $clock.data('is-minimized', false).removeClass('minimized'); 
+            $clockBody.slideDown(300);
+            removeMinimizedFabButton(clockId);
+            $minimizeBtn.attr('title', '最小化');
+        } else {
+            // 最小化
+            $clock.data('is-minimized', true);
+            $clockBody.slideUp(300, function() {
+                 $clock.addClass('minimized'); 
+            }); 
+            createMinimizedFabButton($clock);
+            $minimizeBtn.attr('title', '展开');
+        }
+        saveClocksToStorage();
+    }
+
+    function deleteClock($clock) {
+        const clockId = $clock.attr('id');
+        $clock.remove();
+        removeMinimizedFabButton(clockId);
         saveClocksToStorage();
     }
     
-    // ... (updateClock, updateAllClocks, calculateTimeParts 函数)
+    // ----------------------------------------------------------------
+    // 4. 壁纸逻辑
+    // ----------------------------------------------------------------
+
+    const WALLPAPERS = [
+        "https://wallpaper.infinitynewtab.com/wallpaper/4009.jpg",
+        "https://wallpaper.infinitynewtab.com/wallpaper/4005.jpg",
+        "https://wallpaper.infinitynewtab.com/wallpaper/4001.jpg",
+        "https://wallpaper.infinitynewtab.com/wallpaper/4003.jpg"
+    ];
+
+    function setRandomBackground() {
+        const randomIndex = Math.floor(Math.random() * WALLPAPERS.length);
+        const url = WALLPAPERS[randomIndex];
+        $('body').css('background-image', `url('${url}')`);
+        localStorage.setItem(WALLPAPER_KEY, url);
+        localStorage.setItem(WALLPAPER_TYPE_KEY, 'random');
+    }
+
+    function setLocalBackground(dataUrl) {
+        $('body').css('background-image', `url('${dataUrl}')`);
+        localStorage.setItem('savedLocalWallpaper', dataUrl); 
+        localStorage.setItem(WALLPAPER_TYPE_KEY, 'local');
+    }
     
-    function updateClock($clock) {
-         const nowTS = Date.now() / 1000; 
-         const clockId = $clock.data('id');
-         const startDateStr = $clock.find('.clock-start-date').val();
-         const targetDateStr = $clock.find('.clock-target-date').val();
-         const $minimizedFab = $(`#fab-container .minimized-clock-btn[data-id="${clockId}"]`);
-         const timeColor = globalSettings.timeNumberColor.toUpperCase(); 
+    function loadWallpaper() {
+        const type = localStorage.getItem(WALLPAPER_TYPE_KEY) || 'random';
+        const localUrl = localStorage.getItem('savedLocalWallpaper');
+        const lastUrl = localStorage.getItem(WALLPAPER_KEY);
 
-         let percentageText = 'N/A';
-         let timestamp = 0; 
-         let isCompleted = false;
-
-         if (targetDateStr) {
-             const targetTS = Date.parse(new Date(targetDateStr)) / 1000;
-             timestamp = targetTS - nowTS;
-
-             if (timestamp <= 0) {
-                 timestamp = 0;
-                 isCompleted = true;
-             }
-
-             if (startDateStr) {
-                 const startTS = Date.parse(new Date(startDateStr)) / 1000;
-                 const totalDuration = targetTS - startTS;
-                 const elapsedDuration = nowTS - startTS;
-                 let percentage;
-
-                 if (totalDuration <= 0 || targetTS < startTS) {
-                     percentage = 0;
-                 } else if (elapsedDuration >= totalDuration) {
-                     percentage = 100;
-                 } else {
-                     percentage = Math.max(0, (elapsedDuration / totalDuration) * 100);
-                 }
-                 percentageText = percentage.toFixed(2) + '%';
-             }
-         }
-            
-         const timeParts = calculateTimeParts(timestamp);
-
-         // 应用全局数字颜色
-         $clock.find('.time-l').css('color', timeColor);
-         $clock.find('.time-d').text(timeParts.totalDays);
-         $clock.find('.time-h').text(timeParts.hour);
-         $clock.find('.time-m').text(timeParts.minute);
-         $clock.find('.time-sec').text(timeParts.second);
-
-         $clock.find('.progress-bar-inner').css('width', percentageText);
-         $clock.find('.progress-percent-text').text(percentageText);
-            
-         if ($minimizedFab.length) {
-             $minimizedFab.find('.min-percent').text(percentageText);
-             $minimizedFab.find('.min-title').text($clock.find('.clock-title').text().trim());
-             $minimizedFab.attr('title', $clock.find('.clock-title').text().trim() + ' 进度');
-         }
-
-         // ★★★ 计时完成状态处理 ★★★
-         if (isCompleted) {
-             // 1. 卡片和 FAB 添加完成类和动画类
-             $clock.addClass('completed');
-             if ($minimizedFab.length) {
-                 // 确保悬浮球只有在可见时才闪烁
-                 if ($minimizedFab.css('display') === 'flex') {
-                    $minimizedFab.addClass('completed bounce animated');
-                 } else {
-                    $minimizedFab.addClass('completed');
-                 }
-             }
-         } else {
-             // 2. 移除类
-             $clock.removeClass('completed');
-             if ($minimizedFab.length) {
-                 $minimizedFab.removeClass('completed bounce animated');
-             }
-         }
+        if (type === 'local' && localUrl) {
+            $('body').css('background-image', `url('${localUrl}')`);
+        } else if (lastUrl) {
+            $('body').css('background-image', `url('${lastUrl}')`);
+            localStorage.setItem(WALLPAPER_TYPE_KEY, 'random');
+        } else {
+            setRandomBackground();
+        }
     }
 
-
-    function updateAllClocks() {
-        $('.clock-instance').each(function() {
-            updateClock($(this));
-        });
-    }
-
-    function calculateTimeParts(timestamp) {
-         let totalSeconds = Math.max(0, Math.floor(timestamp));
-         const totalDays = Math.floor(totalSeconds / (24 * 3600));
-         totalSeconds %= (24 * 3600);
-         const hour = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
-         totalSeconds %= 3600;
-         const minute = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
-         const second = String(totalSeconds % 60).padStart(2, '0');
-         return { totalDays, hour, minute, second };
-    }
-
-    // ----------------------------------------------------------------
-    // 5. 事件绑定 (最小化、删除、设置)
+// ----------------------------------------------------------------
+    // 5. 事件监听器
     // ----------------------------------------------------------------
 
-    // 添加新时钟
-    $('#add-clock-btn').off('click').on('click', addNewClock);
+    $('#add-clock-btn').on('click', addNewClock);
+    
+    // *** 移除 BINGO 模态框显示逻辑，交给 bingo.js 处理新设置面板 ***
+    /*
+    $('#bingo-fab').on('click', function() {
+        $('#bingo-modal').fadeIn(300);
+    });
+    $('#bingo-modal').on('click', function(e) {
+        if (e.target.id === 'bingo-modal' || $(e.target).hasClass('close-bingo-btn')) { 
+            $(this).fadeOut(300);
+        }
+    });
+    */
 
-    // 删除按钮
     $clocksContainer.on('click', '.delete-clock-btn', function() {
         const $clock = $(this).closest('.clock-instance');
-        const clockId = $clock.data('id');
-
-        $clock.fadeOut(200, function() {
-            $(this).remove();
-            // 移除对应的 FAB 
-            $(`#fab-container .minimized-clock-btn[data-id="${clockId}"]`).remove();
-            saveClocksToStorage();
-        });
+        deleteClock($clock);
     });
 
-    // 最小化按钮
     $clocksContainer.on('click', '.minimize-toggle-btn', function() {
         const $clock = $(this).closest('.clock-instance');
-        const clockId = $clock.data('id');
-        const $minimizedFab = $(`#fab-container .minimized-clock-btn[data-id="${clockId}"]`);
-
-        $clock.fadeOut(300, function() {
-             $minimizedFab.css('display', 'flex'); 
-             saveClocksToStorage(); 
-             if ($clock.hasClass('completed')) {
-                 $minimizedFab.addClass('bounce animated');
-             }
-        });
-    });
-    
-    // 最小化 FAB 点击 (恢复)
-    $('#fab-container').on('click', '.minimized-clock-btn', function() {
-        const $minimizedFab = $(this);
-        const clockId = $minimizedFab.data('id');
-        const $clock = $(`#clocks-container .clock-instance[data-id="${clockId}"]`);
-
-        $minimizedFab.hide().removeClass('bounce animated'); 
-        
-        $clock.fadeIn(300, function() { 
-            const currentPosition = $clock.css('position');
-            
-            // 如果卡片在默认位置，恢复到流式布局，否则保持绝对定位
-            if (currentPosition !== 'absolute' || ($clock.css('top') === '0px' && $clock.css('left') === '0px')) {
-                 $clock.css({'position': 'relative', 'left': 'auto', 'top': 'auto'}); 
-            } 
-            saveClocksToStorage(); 
-        });
+        toggleClockMinimize($clock);
     });
 
-    // 单个时钟设置菜单切换
     $clocksContainer.on('click', '.settings-toggle-btn', function() {
-        const $this = $(this);
-        const $settings = $this.closest('.clock-instance').find('.clock-settings');
-        
-        $settings.slideToggle(200);
-        $this.find('.arrow-down').toggle();
-        $this.find('.arrow-up').toggle();
+        const $settings = $(this).closest('.clock-instance').find('.clock-settings');
+        $settings.slideToggle(300, function() {
+            saveClocksToStorage();
+        });
     });
 
-    // 单个时钟颜色设置和输入自动保存
-    $clocksContainer.on('input blur', '.clock-title, .clock-start-date, .clock-target-date, .clock-title-color', function() {
-        const $this = $(this);
-        if ($this.hasClass('clock-title-color')) {
-             // 颜色输入改变时，立即更新标题预览颜色
-             const newColor = $this.val();
-             $this.closest('.clock-instance').find('.clock-title').css('color', newColor);
-             updateMinimizedFabColors(); // 立即更新 FAB 颜色
-        }
-        
-        if ($this[0].saveTimer) {
-            clearTimeout($this[0].saveTimer);
-        }
-        $this[0].saveTimer = setTimeout(() => {
-            saveClocksToStorage();
-        }, 500); 
-    });
-    
-    // 重置标题颜色为默认白色
     $clocksContainer.on('click', '.reset-title-color-btn', function() {
-         const $clock = $(this).closest('.clock-instance');
-         $clock.find('.clock-title-color').val('#FFFFFF');
-         $clock.find('.clock-title').css('color', '#FFFFFF');
-         saveClocksToStorage();
+        const $title = $(this).closest('.clock-instance').find('.clock-title');
+        $title.css('color', '#FFFFFF');
+        $(this).closest('.clock-settings').find('.title-color-picker').val('#ffffff');
+        saveClocksToStorage();
+        updateMinimizedFabColors();
+    });
+
+    // 目标时间修改
+    $clocksContainer.on('change', '.target-time-input', function() {
+        const $clock = $(this).closest('.clock-instance');
+        $clock.data('target-time', $(this).val());
+        // 更新目标日期提示
+        $clock.find('.end-date-tip').text(`目标: ${new Date($(this).val()).toLocaleDateString()}`);
+        updateClockDisplay($clock);
+        saveClocksToStorage();
     });
     
-    // ★★★ 全局设置菜单事件绑定 (修复内容) ★★★
+    // *** 修复：起始时间修改事件 ***
+    $clocksContainer.on('change', '.start-time-input', function() {
+        const $clock = $(this).closest('.clock-instance');
+        $clock.data('start-time', $(this).val());
+        // 更新起始日期提示
+        $clock.find('.start-date-tip').text(`起始: ${new Date($(this).val()).toLocaleDateString()}`);
+        updateClockDisplay($clock);
+        saveClocksToStorage();
+    });
+
+
+    $clocksContainer.on('input', '.clock-title', function() {
+        const $clock = $(this).closest('.clock-instance');
+        const title = $(this).text();
+        const $fab = $(`#fab-${$clock.attr('id')}`);
+        
+        if ($fab.length) {
+            $fab.attr('title', title);
+            $fab.find('.fab-title').text(title);
+        }
+
+        saveClocksToStorage();
+        updateMinimizedFabColors();
+    });
+
+    $clocksContainer.on('input', '.title-color-picker', function() {
+        const color = $(this).val();
+        $(this).closest('.clock-instance').find('.clock-title').css('color', color);
+        saveClocksToStorage();
+        updateMinimizedFabColors();
+    });
 
     $('#settings-fab').on('click', function() {
-        $('#global-settings-menu').slideToggle(200);
+        $('#global-settings-menu').slideToggle(300);
+    });
+    
+    $('#new-clock-default-time').on('change', function() {
+        globalSettings.newClockDefaultTime = $(this).val();
+        saveGlobalSettings();
     });
 
-    // 1. FAB 颜色模式切换
     $('#fab-color-mode').on('change', function() {
         globalSettings.fabColorMode = $(this).val();
-        saveGlobalSettings(); 
+        saveGlobalSettings();
+        updateMinimizedFabColors();
+    });
+    
+    $('#time-number-color, #time-number-color-text').on('input', function() {
+        const color = $(this).val();
+        globalSettings.timeNumberColor = color;
+        $('#time-number-color').val(color);
+        $('#time-number-color-text').val(color);
+        applyGlobalSettings();
+        saveGlobalSettings();
+    });
+    
+    $('#progress-bar-color, #progress-bar-color-text').on('input', function() {
+        const color = $(this).val();
+        globalSettings.progressBarColor = color;
+        $('#progress-bar-color').val(color);
+        $('#progress-bar-color-text').val(color);
+        $('.progress-bar-inner').css('background', `linear-gradient(90deg, ${color}, ${generateLighterColor(color)})`);
+        saveGlobalSettings();
     });
 
-    // 2. 全局数字颜色选择器
-    $('#time-number-color').on('input', function() {
-        const newColor = $(this).val().toUpperCase();
-        globalSettings.timeNumberColor = newColor;
-        $('#time-number-color-text').val(newColor);
-        saveGlobalSettings();
-    });
-    
-    // 3. 全局进度条颜色选择器
-    $('#progress-bar-color').on('input', function() {
-        const newColor = $(this).val().toUpperCase();
-        globalSettings.progressBarColor = newColor;
-        $('#progress-bar-color-text').val(newColor);
-        saveGlobalSettings();
-    });
-    
-    // 4. 导入本地壁纸按钮
+
+    // 壁纸相关事件
     $('#import-local-wallpaper-btn').on('click', function() {
         $('#local-wallpaper-input').trigger('click');
     });
 
-    // 5. 本地壁纸文件选择
-    $('#local-wallpaper-input').on('change', function(event) {
+    $('#local-wallpaper-input').off('change').on('change', function(event) {
         const file = event.target.files[0];
         if (file) {
             const reader = new FileReader();
             reader.onload = function(e) {
-                // 使用 DataURL 设置和存储壁纸
                 setLocalBackground(e.target.result); 
+                $('#local-wallpaper-input').val('');
+            };
+            reader.onerror = function() {
+                console.error("FileReader failed to read file.");
+                alert("导入图片失败，请检查文件格式。");
             };
             reader.readAsDataURL(file);
         }
     });
 
-    // 6. 清除本地壁纸按钮
+    //$('#set-random-wallpaper-btn').on('click', function() {
+       // setRandomBackground();
+      //  alert("已切换到随机壁纸。");
+   // });功能重复了，傻逼ai
+    
     $('#clear-local-wallpaper-btn').on('click', function() {
-        // 1. 清除本地存储的图片 URL
         localStorage.removeItem('savedLocalWallpaper');
-        // 2. 切换回随机壁纸
         setRandomBackground();
     });
+
     
-    // 7. 随机/本地壁纸切换按钮
-    $('#wallpaper-btn').on('click', toggleWallpaper);
-
-
     // ----------------------------------------------------------------
     // 6. 初始化 
     // ----------------------------------------------------------------
@@ -695,8 +661,7 @@ $(function() {
     (function init() {
         loadWallpaper(); 
         loadGlobalSettings();
-        applyGlobalSettings(); 
-
+        
         const initialClocks = loadClocksFromStorage();
         
         if (initialClocks.length > 0) {
@@ -704,14 +669,17 @@ $(function() {
                 renderClock(clockData);
             });
         } else {
-            // 如果没有保存的时钟，则添加一个默认时钟
             addNewClock(); 
         }
         
-        updateMinimizedFabColors();
+$('.clock-instance').draggable({
+            handle: ".clock-header",
+            containment: "document",
+            // *** 添加此行：忽略发生在 .clock-title 上的点击事件 ***
+            cancel: ".clock-title"
+        });
 
-        setInterval(updateAllClocks, 1000);
-        updateAllClocks(); 
+        applyGlobalSettings(); 
+
     })();
-
 });
